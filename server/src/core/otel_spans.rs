@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-License-Identifier: MIT
 
 //! Module defining utilities for crating `tracing` spans compatable with OpenTelemetry's

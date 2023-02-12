@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-License-Identifier: MIT
 
 //! Defines idempotency middleware for the Axum server which first looks up the given key for an

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-License-Identifier: MIT
 
 use std::{string::FromUtf8Error, time::Duration};

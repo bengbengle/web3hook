@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-Licensepub(crate) -Identifier: MIT
 
 use crate::cfg::Configuration;

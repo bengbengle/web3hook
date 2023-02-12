@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-License-Identifier: MIT
 
 //! Module defining utilites for PATCH requests focused mostly around non-required field types.

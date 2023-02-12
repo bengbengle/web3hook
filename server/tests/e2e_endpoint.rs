@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2022 Svix Authors
+// SPDX-FileCopyrightText: © 2022
 // SPDX-License-Identifier: MIT
 
 use crate::utils::common_calls::{default_test_endpoint, metadata};
