@@ -2,7 +2,7 @@
     <p align="center">Web3hook as a service</p>
 </h1>
 
-## Svix is the enterprise ready webhook service
+## Web3hook is the enterprise ready webhook service
 
 web3hook makes it easy for developers to send webhooks. 
 Developers make one API call, and web3hook takes care of deliverability, retries, security, and more. 
