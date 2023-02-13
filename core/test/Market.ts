@@ -1,124 +1,177 @@
-import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
+import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers,network, web3 } from "hardhat";
+import { Market } from "../typechain-types/contracts";
+// import web3 from  "@nomiclabs/hardhat-web3";
 
-describe("Lock", function () {
+describe("Market", function () {
   // We define a fixture to reuse the same setup in every test.
   // We use loadFixture to run this setup once, snapshot that state,
   // and reset Hardhat Network to that snapshot in every test.
-  async function deployOneYearLockFixture() {
-    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-    const ONE_GWEI = 1_000_000_000;
+  async function deployMarket() {
 
-    const lockedAmount = ONE_GWEI;
-    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+    const [maker, taker] = await ethers.getSigners();
 
-    // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount] = await ethers.getSigners();
+    const Market = await ethers.getContractFactory("Market");
+    const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
+    const ERC721Mock = await ethers.getContractFactory("ERC721Mock");
 
-    const Lock = await ethers.getContractFactory("Lock");
-    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+    const market = await Market.deploy();
+    const erc721Mock = await ERC721Mock.deploy();
+    const erc20Mock = await ERC20Mock.deploy();
 
-    return { lock, unlockTime, lockedAmount, owner, otherAccount };
+    await market.deployed();
+    await erc721Mock.deployed();
+    await erc20Mock.deployed();
+
+    await erc20Mock.mint(maker.address, 1000000);
+    await erc721Mock.safeMint(maker.address); // 0
+    await erc721Mock.safeMint(maker.address); // 1
+
+    await erc721Mock.safeMint(taker.address); // 2
+    await erc721Mock.safeMint(taker.address); // 3
+    await erc721Mock.safeMint(taker.address); // 4
+
+    await market.setAvailableERC20(erc20Mock.address, true);
+    await market.setAvailablERC721(erc721Mock.address, true);
+
+    return { market, erc20Mock, erc721Mock, maker, taker };
   }
 
+  async function signRawOrder(_order: any, seller: string) {
+    
+    let message = ethers.utils.solidityPack(
+      [
+        "uint256",  // oid
+        "address",  //"maker"
+        "address",  //"taker"
+        "address",  // erc721
+        "uint256",  // tokenId
+        "address",  // erc20
+        "uint256",  // amount
+        "uint8"     // status
+      ],
+      [
+        _order.oid, // order id = new Date().getTime(),  
+        _order.maker,
+        _order.taker,
+
+        _order.erc721Address,
+        _order.tokenId,
+        
+        _order.erc20Address,
+        _order.amount,//price
+        _order.status, // de
+      ]
+    );
+
+    let msghash = ethers.utils.keccak256(message);
+    var sig= await web3.eth.sign(msghash, seller);
+
+    return sig;
+
+  }
   describe("Deployment", function () {
-    it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
-
-      expect(await lock.unlockTime()).to.equal(unlockTime);
+    it("Should set the Supported ERC20", async function () {
+      const { market, erc20Mock, erc721Mock } = await loadFixture(deployMarket);
+      expect(await market.isERC20Available(erc20Mock.address)).to.equal(true);
+    });
+    it("Should set the Supported ERC721", async function () {
+      const { market, erc20Mock, erc721Mock } = await loadFixture(deployMarket);
+      expect(await market.isERC721Available(erc721Mock.address)).to.equal(true);
     });
 
-    it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
+    it("Should maker’s erc721 balance equal 1000000", async function () {
+      const { market, erc20Mock, erc721Mock, maker, taker } = await loadFixture(deployMarket);
 
-      expect(await lock.owner()).to.equal(owner.address);
-    });
+      expect(await erc20Mock.balanceOf(maker.address)).to.equal(1000000);
 
-    it("Should receive and store the funds to lock", async function () {
-      const { lock, lockedAmount } = await loadFixture(
-        deployOneYearLockFixture
-      );
-
-      expect(await ethers.provider.getBalance(lock.address)).to.equal(
-        lockedAmount
-      );
-    });
-
-    it("Should fail if the unlockTime is not in the future", async function () {
-      // We don't use the fixture here because we want a different deployment
-      const latestTime = await time.latest();
-      const Lock = await ethers.getContractFactory("Lock");
-      await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
-        "Unlock time should be in the future"
-      );
+      expect(await erc721Mock.balanceOf(maker.address)).to.equal(2);
+      expect(await erc721Mock.balanceOf(taker.address)).to.equal(3);
     });
   });
 
-  describe("Withdrawals", function () {
-    describe("Validations", function () {
-      it("Should revert with the right error if called too soon", async function () {
-        const { lock } = await loadFixture(deployOneYearLockFixture);
 
-        await expect(lock.withdraw()).to.be.revertedWith(
-          "You can't withdraw yet"
-        );
-      });
+  describe("Maker Sig", function () {
 
-      it("Should revert with the right error if called from another account", async function () {
-        const { lock, unlockTime, otherAccount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    it("Should the seller sig be passed", async function () {
 
-        // We can increase the time in Hardhat Network
-        await time.increaseTo(unlockTime);
+      const { market, erc20Mock, erc721Mock, maker, taker } = await loadFixture(deployMarket);
 
-        // We use lock.connect() to send a transaction from another account
-        await expect(lock.connect(otherAccount).withdraw()).to.be.revertedWith(
-          "You aren't the owner"
-        );
-      });
+      const o = {
+        oid: "1",
+        maker: maker.address, // use erc20 swap erc721
+        taker: taker.address, // use erc721 swap erc20
+        erc721Address: erc721Mock.address,
+        erc20Address: erc20Mock.address,
+        tokenId: "2",
+        amount: "100",
+        status: "1"
+      }
 
-      it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-        const { lock, unlockTime } = await loadFixture(
-          deployOneYearLockFixture
-        );
+      let sig = await signRawOrder(o, maker.address);
+      
+      let _isvalid = await market.verifyOrder(o, sig);
+      
+      console.log('maker::', o.maker);
+      console.log('taker::', o.taker);
 
-        // Transactions are sent using the first signer by default
-        await time.increaseTo(unlockTime);
+      console.log('isvalid:', _isvalid);
 
-        await expect(lock.withdraw()).not.to.be.reverted;
-      });
+      expect(_isvalid[0]).to.equal(maker.address);
     });
 
-    describe("Events", function () {
-      it("Should emit an event on withdrawals", async function () {
-        const { lock, unlockTime, lockedAmount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    
 
-        await time.increaseTo(unlockTime);
+  });
 
-        await expect(lock.withdraw())
-          .to.emit(lock, "Withdrawal")
-          .withArgs(lockedAmount, anyValue); // We accept any value as `when` arg
-      });
-    });
+  
+  describe("Bid And Accept", function () {
 
-    describe("Transfers", function () {
-      it("Should transfer the funds to the owner", async function () {
-        const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    it("Should buy success", async function () {
 
-        await time.increaseTo(unlockTime);
+      const { market, erc20Mock, erc721Mock, maker, taker } = await loadFixture(deployMarket);
 
-        await expect(lock.withdraw()).to.changeEtherBalances(
-          [owner, lock],
-          [lockedAmount, -lockedAmount]
-        );
-      });
+      const o = {
+        oid: "1",
+        maker: maker.address, // use erc20 swap erc721
+        taker: taker.address, // use erc721 swap erc20
+        erc721Address: erc721Mock.address,
+        erc20Address: erc20Mock.address,
+        tokenId: "2",
+        amount: "5",
+        status: "1"
+      }
+      // 0. pre check the amount and nft 
+      
+      expect(await erc20Mock.balanceOf(maker.address)).to.equal(1000000);
+      expect(await erc721Mock.balanceOf(maker.address)).to.equal(2);
+      
+      expect(await erc20Mock.balanceOf(taker.address)).to.equal(0);
+      // expect(await erc721Mock.balanceOf(taker.address)).to.equal(3);
+      expect(await erc721Mock.ownerOf(2)).to.equal(taker.address);
+     
+
+
+      
+      await erc20Mock.connect(maker).approve(market.address,100);
+      await erc721Mock.connect(taker).setApprovalForAll(market.address, true);
+
+      // 1. maker sign a buy order
+      let sig = await signRawOrder(o, maker.address);
+      
+      // 2. taker accept the order
+      await market.connect(taker).take(o, sig);
+      
+      // 3. verify the amount and nft
+       
+      expect(await erc20Mock.balanceOf(maker.address)).to.equal(999995);
+      expect(await erc721Mock.balanceOf(maker.address)).to.equal(3);
+      
+      expect(await erc20Mock.balanceOf(taker.address)).to.equal(5);
+      expect(await erc721Mock.balanceOf(taker.address)).to.equal(2);
+      
+      expect(await erc721Mock.ownerOf(2)).to.equal(maker.address);
     });
   });
 });

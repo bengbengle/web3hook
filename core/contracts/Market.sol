@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
-pragma experimental ABIEncoderV2;
+// pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
@@ -12,60 +12,40 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
+using ECDSA for bytes32; 
+
 contract Market is Context, Ownable, IERC721Receiver, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    //default, order no exist
-    enum OrderStatus{NOT_EXIST, OPEN, CANCELED, FINISHED, EXPIRE}
-    struct TransactionInput {
-        uint256 orderUuid; //order_uuid
-        address seller;
-        address nftAddress;
-        uint256 tokenId;
-        address erc20Address;
-        uint256 price;
-        //deadline?
-        OrderStatus status;
-    }
+    // default, order no exist
+    enum Status{NOT_EXIST, OPEN, CANCELED, FINISHED, EXPIRE}
 
-    struct OrderDetail {
-        address seller;
-        address buyer;
-        address nftAddress;
+    struct Order {
+        uint256 oid; // order_uuid
+        address maker;
+        address taker;
+
+        address erc721Address;
         uint256 tokenId;
+
         address erc20Address;
-        uint256 price;
-        OrderStatus status;
+        uint256 amount;
+
+        Status status;
     }
 
     // BNB or ETH
     address private constant NATIVE_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    uint32 public constant PCT_FEE_BASE = 1e6;
-    uint32 public constant DEFAULT_FEE_PCT = 3 * 1e4; // 3%, 30000=0.03*PCT_FEE_BASE
-
     bool public _isMarketPaused = false; // default market open
-    uint32 public _feePct = DEFAULT_FEE_PCT; //pct: percent
-    // signer
-    // address private _validator;
-    // address private _cfo;
 
-    // nftAddress is added to the market or not
-    mapping(address => bool) private _nftAvailable;
-    // erc20Address is available or not
+    mapping(address => bool) private _erc721Available;
     mapping(address => bool) private _erc20Available;
     
-    // orderUuid => OrderDetail
-    // mapping(uint256 => OrderDetail) private _historyOrders;
-    // uint private _historyOrderCount = 0; //Need ?
+    event TakeEvent(uint256 oid);
 
-    event Buy(uint256 orderUuid);
-    event CancelOrder(uint256 indexed orderUuid);
-
-    constructor(address validator) {
+    constructor() {
         _erc20Available[NATIVE_ADDRESS] = true;
-        // _cfo = cfo;
-        // _validator = validator;
     }
 
     modifier marketNotPaused() {
@@ -73,316 +53,184 @@ contract Market is Context, Ownable, IERC721Receiver, ReentrancyGuard {
         _;
     }
 
-    // function setCFOAddress(address _newCFO) public onlyOwner {
-    //     require(_newCFO != address(0));
-    //     _cfo = _newCFO;
-    // }
-
-    // function getCFOAddress() public view returns (address) {
-    //     return _cfo;
-    // }
 
     function pauseMarket(bool isPause) external onlyOwner {
+        
         _isMarketPaused = isPause;
     }
 
-    function setFee(uint32 newFeePct) external onlyOwner {
-        //DEFAULT_FEE_PCT = 3 * 1e4; // 3%: 0.03 * PCT_FEE_BASE =30000
-        _feePct = newFeePct;
+    function setAvailablERC721(address erc721Address, bool newState) external onlyOwner {
+
+        _erc721Available[erc721Address] = newState;
     }
 
-    // function setValidator(address newValidator) external onlyOwner {
-    //     _validator = newValidator;
-    // }
+    function setAvailableERC20(address erc20Address, bool newState) external onlyOwner {
 
-    function setAvailableNft(address nftAddress, bool newState)
-        external
-        onlyOwner
-    {
-        _nftAvailable[nftAddress] = newState;
-    }
-
-    function setAvailableERC20(address erc20Address, bool newState)
-        external
-        onlyOwner
-    {
         _erc20Available[erc20Address] = newState;
     }
 
-    //why not direct transfer out?
     function withdraw(address payable to) external onlyOwner {
-        //withdraw amount? leave some gas
+
         uint256 balance = address(this).balance;
         to.transfer(balance);
     }
 
-    //No need withdrawERC20?
-    function withdrawERC20(address erc20Address, address to)
-        external
-        onlyOwner
-    {
-        IERC20 erc20Token = IERC20(erc20Address);
-        uint256 balance = erc20Token.balanceOf(address(this));
-        erc20Token.safeTransfer(to, balance);
+    // No need withdrawERC20?
+    function withdrawERC20(address _address, address to) external onlyOwner {
+
+        IERC20 token = IERC20(_address);
+        uint256 balance = token.balanceOf(address(this));
+        token.safeTransfer(to, balance);
     }
 
     // recover
-    function withdrawERC721(
-        address nftAddress,
-        uint256 tokenId,
-        address to
-    ) external onlyOwner {
-        IERC721 nft = IERC721(nftAddress);
+    function withdrawERC721(address _address, uint256 _tokenId, address to) external onlyOwner {
+        
+        IERC721 erc721 = IERC721(_address);
         require(
-            nft.ownerOf(tokenId) == address(this),
-            "this contract is not the owner"
+            erc721.ownerOf(_tokenId) == address(this), "this contract is not the owner"
         );
-        nft.safeTransferFrom(address(this), to, tokenId);
+        erc721.safeTransferFrom(address(this), to, _tokenId);
     }
 
-    //TODO: add ERC1155 support
-    function isNftAvailable(address nftAddress) public view returns (bool) {
-        return _nftAvailable[nftAddress];
+
+    function isERC721Available(address erc721Address) public view returns (bool) {
+        return _erc721Available[erc721Address];
     }
 
-    function isERC20Support(address erc20Address) public view returns (bool) {
+    function isERC20Available(address erc20Address) public view returns (bool) {
         return _erc20Available[erc20Address];
     }
 
-    /**
-        if orderUuid not exist in _historyDetail, should return Detail with all zero
-        WARNING: caller should check the result is exist or not
-     */
-    // function getHistoryOrder(uint256 orderUuid) public view returns (OrderDetail memory)
-    // {
-    //     return _historyOrders[orderUuid];
-    // }
 
-    function isOrderOpen(OrderStatus status) public pure returns (bool) {
-        return status == OrderStatus.OPEN;
+    function isOrderOpen(Status status) public pure returns (bool) {
+        return status == Status.OPEN;
     }
 
-    function isOrderFinal(OrderStatus status) public pure returns (bool) {
-        return status == OrderStatus.CANCELED || status == OrderStatus.FINISHED;
+    function isOrderFinal(Status status) public pure returns (bool) {
+        return status == Status.CANCELED || status == Status.FINISHED;
     }
+  
+    function hashToVerify(Order memory _order) private pure returns (bytes32){
+        return keccak256(
+            abi.encodePacked(
+                _order.oid,
+                _order.maker,
+                _order.taker,
 
-    /**
-    1, input status == OPEN
-    2, order_history Not exist
-    3, Gas free order: every exist order should be final status
-    4, For auction: order_history status = OPEN
-    */
-    function isOrderBuyable(
-        uint256 orderUuid, 
-        OrderStatus inputStatus
-    )
-        public
-        view
-        returns (bool)
-    {
-        // OrderStatus status = _historyOrders[orderUuid].status;
-
-        return inputStatus == OrderStatus.OPEN;
-        // && (status == OrderStatus.NOT_EXIST || isOrderOpen(status))
+                _order.erc721Address,
+                _order.tokenId,
+                
+                _order.erc20Address,
+                _order.amount,
+                
+                _order.status
+            )
+        );
     }
+    
 
-    /**
-        For gas free order, order uuid not exist.
-        For Auction order, order status==open
-    */
-    // function isOrderCancelable(uint256 orderUuid) 
-    // public view returns (bool)
-    // {
-    //     // OrderStatus status = _historyOrders[orderUuid].status;
-    //     // return status == OrderStatus.NOT_EXIST || status == OrderStatus.OPEN;
-    // }
+    function verifyOrder(Order memory _order, bytes memory signature) public view  returns(address ,bool) {
+        
+        require(
+            _order.status == Status.OPEN, "Invalid: oid is not tabkeable"
+        );
 
-    /**
-        FIXME: sellerSig should include uuid
-        TODO: add ERC1155 support
-        if this NFT traded by ERC20 token, buyer must be approve to this contract
-        Seller must "setApprovalForAll" this contract as the operator
-     */
-    function buy(
-        TransactionInput calldata input,
-        bytes calldata sellerSig
-        // bytes calldata validatorSig
+        require(
+            _erc721Available[_order.erc721Address], "Invalid: this NFT address is not available"
+        );
+
+        require(
+            _erc20Available[_order.erc20Address], "Invalid: this erc20 token is not available"
+        );
+
+        bytes32 verifyHash = hashToVerify(_order);
+
+        address signerAddress = verifyHash.toEthSignedMessageHash().recover(signature);
+
+        if (_order.maker == signerAddress) {
+            //The message is authentic
+            return (signerAddress, true);
+        } else {
+            //msg.sender didnt sign this message.
+            return (signerAddress,false);
+        }
+    }
+  
+
+    function take(
+        Order calldata _order,
+        bytes calldata _sig
     ) public payable nonReentrant marketNotPaused {
         
-        checkOrderValide(
-            input, 
-            sellerSig
-            // validatorSig
-        );
+        // check order isvalide?
+        _checkIsValide(_order, _sig);
 
-        swap(input);
+        // transfer erc20
+        _transferERC20(_order.erc20Address, _order.amount, _order.maker, _msgSender());
+
+        // transfer erc721
+        _transferERC721(_order.erc721Address, _order.tokenId, _msgSender(),  _order.maker);
         
-        // logHistory(input);
-
-        emit Buy(input.orderUuid);
+        // emit event
+        emit TakeEvent(_order.oid);
     }
 
-    function checkOrderValide(
-        TransactionInput memory input, 
-        bytes memory sellerSig
-        // bytes memory validatorSig
-    ) 
-    internal view {
-        uint256 orderUuid = input.orderUuid;
-        //TODO: check other input params
-        //TODO: check deadline, if order expire, set to expire status
-        //if block.timestamp > input.deadline
-        //set order.status = expire
-        // require(input.deadline >= block.timestamp);
-        require(
-            isOrderBuyable(orderUuid, input.status),
-            "Invalid: orderUuid is not buyable"
+    function _checkIsValide(Order memory _order, bytes memory _sig) internal view {
+
+         require(
+            _order.status == Status.OPEN, "Invalid: oid is not tabkeable"
         );
 
         require(
-            _nftAvailable[input.nftAddress], "Invalid: this NFT address is not available"
+            _erc721Available[_order.erc721Address], "Invalid: this NFT address is not available"
         );
+
         require(
-            _erc20Available[input.erc20Address], "Invalid: this erc20 token is not available"
+            _erc20Available[_order.erc20Address], "Invalid: this erc20 token is not available"
         );
-        
-        IERC721 nft = IERC721(input.nftAddress);
-        address currentOwner = nft.ownerOf(input.tokenId);
-        require(_msgSender() != currentOwner, "owner can not be the buyer"); // let it be?
 
-        // check validator signature
-        // bytes32 validatorHash = keccak256(
-        //     abi.encodePacked(
-        //         orderUuid,
-        //         input.seller,
-        //         input.nftAddress,
-        //         input.tokenId,
-        //         input.erc20Address,
-        //         input.price
-        //     )
-        // );
-        // checkSignature(validatorSig, validatorHash, _validator, "validator signature error");
+        bytes32 verifyHash = hashToVerify(_order);
 
-        // check seller signature
-        bytes32 sellerHash = keccak256(
-            abi.encodePacked(
-                input.seller,
-                input.nftAddress,
-                input.tokenId,
-                input.erc20Address,
-                input.price,
-                input.status
-            )
-        );
-        checkSignature(sellerSig, ECDSA.toEthSignedMessageHash(sellerHash), currentOwner, "seller signature error");
+        address signerAddress = verifyHash.toEthSignedMessageHash().recover(_sig);
+
+        // if (_order.maker == signerAddress) {
+        //     //The message is authentic
+        //     return (signerAddress, true);
+        // } else {
+        //     //msg.sender didnt sign this message.
+        //     return (signerAddress,false);
+        // }
+
+        require (_order.maker == signerAddress, "maker signature error");
     }
 
-    function swap(
-        TransactionInput memory input
-    ) internal {
-        //do payment
-        _transferToken(input.price, input.erc20Address, input.seller, _msgSender());
-        //do transfer nft
-        IERC721 nft = IERC721(input.nftAddress);
-        nft.safeTransferFrom(input.seller, _msgSender(), input.tokenId);
-    }
+    function _transferERC20(address _erc20Address, uint256 _amount, address _from, address _to) internal {
 
-    // function logHistory(TransactionInput memory input) internal {
-    //     _historyOrders[input.orderUuid] = OrderDetail({
-    //         seller: input.seller,
-    //         buyer: _msgSender(),
-    //         nftAddress: input.nftAddress,
-    //         tokenId: input.tokenId,
-    //         erc20Address: input.erc20Address,
-    //         price: input.price,
-    //         status: OrderStatus.FINISHED
-    //     });
-    // }
-
-    /**
-    FIXME: sellerSig should include uuid
-    TODO: onlyOwnerOfToken?
-    */
-    function cancelOrder(
-        TransactionInput calldata input,
-        bytes calldata sellerSig
-    ) public nonReentrant marketNotPaused {
-
-        // require(isOrderCancelable(input.orderUuid), "Invalid: orderUuid is not open");
-
-        IERC721 nft = IERC721(input.nftAddress);
-        address currentOwner = nft.ownerOf(input.tokenId);
-        require(
-            _msgSender() == currentOwner,
-            "msg.sender must be the current owner"
-        );
-        require(_msgSender() == input.seller, "msg.sender must be the seller");
-
-        // check seller signature
-        bytes32 sellerHash = keccak256(
-            abi.encodePacked(
-                input.seller,
-                input.nftAddress,
-                input.tokenId,
-                input.erc20Address,
-                input.price,
-                input.status
-            )
-        );
-        
-        checkSignature(
-            sellerSig, 
-            ECDSA.toEthSignedMessageHash(sellerHash), 
-            currentOwner, 
-            "seller signature error"
-        );
-
-        //Need Save the other Orderdetail, if not exist?
-        // _historyOrders[input.orderUuid].status = OrderStatus.CANCELED;
-
-        emit CancelOrder(input.orderUuid);
-    }
-
-    // function isSignatureValid(
-    //     bytes memory signature,
-    //     bytes32 hashCode,
-    //     address signer
-    // ) public pure returns (bool) {
-    //     address recoveredSigner = ECDSA.recover(hashCode, signature);
-    //     return signer == recoveredSigner;
-    // }
-    function checkSignature(bytes memory signature, bytes32 hashCode, address signer, string memory words)
-    public pure {
-        require (ECDSA.recover(hashCode, signature) == signer, words);
-    }
-
-    function _transferToken(
-        uint256 totalPayment,
-        address erc20Address,
-        address seller,
-        address buyer
-    ) internal {
-        uint256 totalFee = (totalPayment * _feePct) / PCT_FEE_BASE;
-        uint256 remaining = totalPayment - totalFee;
-        if (erc20Address == NATIVE_ADDRESS) {
-            // BNB payment
-            //BNB/ETH will pay first to contract address, pay remaining to seller,
-            //left totalFee to contract address
-            require(
-                msg.value >= totalPayment,
-                "not enough ETH/BNB balance to buy"
+        if (_erc20Address == NATIVE_ADDRESS) {
+           require(
+                msg.value >= _amount, "not enough ETH/BNB balance to take"
             );
-            payable(seller).transfer(remaining);
+            payable(_to).transfer(_amount);
+
         } else {
-            // ERC20 token payment
-            IERC20 erc20Token = IERC20(erc20Address);
+
+            IERC20 erc20 = IERC20(_erc20Address);
             require(
-                erc20Token.balanceOf(buyer) >= totalPayment,
-                "not enough ERC20 token balance to buy"
+                erc20.balanceOf(_from) >= _amount, "not enough ERC20 token balance to take"
             );
-            erc20Token.safeTransferFrom(buyer, seller, remaining);
-            erc20Token.safeTransferFrom(buyer, address(this), totalFee);
+            erc20.safeTransferFrom(_from, _to, _amount);
         }
+    }
+
+    function _transferERC721(address _erc721, uint256 _tokenId, address _from , address _to) internal {
+
+        IERC721 erc721 = IERC721(_erc721);
+
+        address erc721Owner = erc721.ownerOf(_tokenId);
+        require(_from == erc721Owner, "does't has the nft owner");
+
+        erc721.safeTransferFrom(_from, _to, _tokenId);
     }
 
     /**
