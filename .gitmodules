@@ -1,0 +1,6 @@
+[submodule "universal-router/solmate"]
+	path = universal-router/solmate
+	url = https://github.com/transmissions11/solmate
+[submodule "universal-router/permit2"]
+	path = universal-router/permit2
+	url = https://github.com/Uniswap/permit2

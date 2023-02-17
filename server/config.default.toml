@@ -14,7 +14,7 @@ listen_address = "0.0.0.0:8071"
 # main_secret = "kPafCtH7KC351nWXQb2pEGa6IRW3OsYpzQJldB8X"
 
 # 用于身份验证的 JWT 秘密 - 应该是秘密的并且是安全生成的
-# jwt_secret = "8KjzRXrKkd9YFcNyqLSIY8JwiaCeRc6WK4UkMnSW"
+jwt_secret = "8KjzRXrKkd9YFcNyqLSIY8JwiaCeRc6WK4UkMnSW"
 
 # 这决定了默认情况下为端点机密生成的密钥类型（当未设置时）。
 # Supported: hmac256 (default), ed25519

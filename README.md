@@ -4,39 +4,35 @@
 
 ## Web3hook is the enterprise ready webhook service
 
-web3hook makes it easy for developers to send webhooks. 
-Developers make one API call, and web3hook takes care of deliverability, retries, security, and more. 
-
-# Running the server
-
-For information on how to use this server please refer to the [running the server](../README.md#running-the-server) in the main README.
+Web3hook 使开发人员可以轻松发送 webhook。
+开发人员进行一次 API 调用, web3hook 负责可交付性、重试、安全性等
 
 # Building from source
 
-You would need a working Rust complier in order to build web3hook server.
-The easiest way is to use [rustup](https://rustup.rs/).
+您需要一个可用的 Rust 编译器来构建 web3hook 服务器。
+最简单的方法是使用 [rustup](https://rustup.rs/)。
 
 ```
-# Clone the repository
+# 克隆存储库
 git clone https://github.com/bengbengle/web3hook
-# Change to the source directory
+# 切换到源目录
 cd web3hook/server/
 # Build
-cargo install --path web3hook-server
+cargo install --path server
 ```
 
 # Development
 
 ## Setup your environment
 
-Make sure you have a working Rust compiled (e.g. by using [rustup](https://rustup.rs/)).
+确保你有一个可用的 Rust 编译（例如通过使用 [rustup](https://rustup.rs/)）。
 
-Once rustup is installed make sure to set up the `stable` toolchain by running:
+安装 rustup 后，确保通过运行以下命令设置 "stable" 工具链：
 ```
 $ rustup default stable
 ```
 
-Afterwards please install the following components:
+之后请安装以下组件:
 ```
 $ rustup component add clippy rust-src cargo rustfmt
 ```
@@ -46,69 +42,67 @@ Install SQLx CLI for database migrations
 $ cargo install sqlx-cli
 ```
 
-For automatic reload while developing:
+开发时自动重新加载：
 ```
 $ cargo install cargo-watch
 ```
 
 ## Run the development server
 
-To run the auto-reloading development server run:
+要运行自动重新加载开发服务器运行：
 ```
-# Move to the inner web3hook-server directory.
-cd web3hook-server
+# 移动到内部 server 目录
+cd server
 cargo watch -x run
 ```
 
-This however will fail, as you also need to point the server to the database and setup a few other configurations.
+然而, 这会失败, 因为您还需要将服务器指向数据库并设置一些其他配置。
 
-The easiest way to achieve that is to use docker-compose to setup a dockerize development environment, and the related config.
+实现这一目标的最简单方法是使用 docker-compose 设置 dockerize 开发环境和相关配置。
 
 ```
 cp development.env .env
-# Set up docker (may need sudo depending on your setup)
+# 设置 docker（根据您的设置可能需要 sudo）
 docker-compose up
 ```
 
-Now run `cargo watch -x run` again to start the development server against your local docker environment.
+再次运行 `cargo watch -x run` 针对您的本地 docker 环境启动开发服务器
 
-Now generate an auth token, you can do it by running:
+现在生成一个授权令牌，你可以通过运行来完成：
 ```
 cargo run jwt generate
 ```
 
-See [the main README](../README.md) for instructions on how to generate it in production.
-
 ### Run the SQL migrations
 
-One last missing piece to the puzzle is running the SQL migrations.
+最后一个缺失的部分是运行 SQL 迁移。
 
-From the same directory as the `.env` file run:
+从与 .env 文件相同的目录运行:
 ```
 cargo sqlx migrate run
 ```
 
 More useful commands:
 ```
-# View the migrations and their status
+# 查看迁移及其状态
 cargo sqlx migrate info
-# Reverting the latest migration
+# 恢复最新的迁移
 cargo sqlx migrate revert
 ```
 
 ## Creating new SQL migration
 
-As you saw before you run/revert migrations. To generate new migrations you just run:
+正如您在运行/还原迁移之前看到的那样。要生成新的迁移，您只需运行：
 ```
 cargo sqlx migrate add -r MIGRATION_NAME
 ```
 
-And fill up the created migration files.
+并填写创建的迁移文件。
 
 
 ## Linting
 
-Please run these two commands before pushing code:
+请在推送代码之前运行这两个命令：
 
 ```
 cargo clippy --fix
@@ -117,15 +111,17 @@ cargo fmt
 
 ## Testing
 
-By default, `cargo test` will run the full test suite which assumes a running PostgreSQL and Redis database.
-These databases are configured with the same environment variables as with running the actual server.
+默认情况下，`cargo test` 将运行完整的测试套件，假设正在运行的 PostgreSQL 和 Redis 数据库。
+这些数据库配置了与运行实际服务器相同的环境变量。
 
-The easiest way to get these tests to pass is to:
+让这些测试通过的最简单方法是:
     1. Use the `testing-docker-compose.yml` file with `docker-compose` to launch the databases on their default ports.
     2. Create a `.env` file as you would when running the server for real.
     3. Migrate the database with `cargo run -- migrate`.
     4. Run `cargo test --all-targets`
 
-Alternatively, if you're only interested in running unit tests, you can just run `cargo test --lib`. These tests don't make any assumptions about the surrounding environment.
+或者，如果您只对运行单元测试感兴趣，则可以只运行 `cargo test --lib`。
+这些测试不对周围环境做出任何假设。
 
-To run only a specific test (e.g. only the application tests), you can use the `--test` flag to `cargo test` which supports common Unix glob patterns. For example: `cargo test --test '*app*'`.
+要仅运行特定测试（例如，仅应用程序测试）, 您可以使用支持常见 Unix glob 模式的 `cargo test` 的 `--test` 标志。
+例如：`cargo test --test '*app*'`。

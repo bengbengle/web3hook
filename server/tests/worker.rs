@@ -225,9 +225,9 @@ async fn test_endpoint_disable_expiration_duration() {
     }
 }
 
-/// Because the endpoint disabling system requires failures, we need a test receiver that fails
-/// some of the time, but not all of the time, such as to be able to test that a successful response
-/// after a failure clears the cache for that endpoint.
+/// 因为端点禁用系统需要失败，
+/// 所以我们需要一个在某些时候失败的测试接收器但不是所有时间
+/// 例如能够测试成功的响应在失败后清除缓存对于那个端点
 struct SporadicallyFailingReceiver {
     pub base_uri: String,
     pub jh: tokio::task::JoinHandle<()>,
@@ -282,8 +282,7 @@ async fn sporadically_failing_route(
     }
 }
 
-/// This tetss that if an endpoint succceeds, that its record is cleared in the cache and it is not
-/// disabled after the grace period following a failure.
+/// 这表明，如果端点成功，其记录将在缓存中清除，并且在失败后的宽限期后不会被禁用。
 #[tokio::test]
 async fn test_endpoint_disable_on_sporadic_failure() {
     let mut cfg = get_default_test_config();

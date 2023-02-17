@@ -157,7 +157,7 @@ pub struct TaskQueueDelivery {
 }
 
 impl TaskQueueDelivery {
-    /// The `timestamp` is when this message will be delivered at
+    /// `timestamp` 是此消息的发送时间
     fn from_arc(task: Arc<QueueTask>, timestamp: Option<DateTime<Utc>>) -> Self {
         let ksuid = KsuidMs::new(timestamp, None);
         Self {
@@ -174,9 +174,8 @@ trait TaskQueueSend: Sync + Send {
 
     async fn ack(&self, delivery: &TaskQueueDelivery) -> Result<()>;
 
-    /// By default NACKing a [`TaskQueueDelivery`] simply reinserts it in the back of the queue
-    /// without any delay. Additionally it `ack`s the orignal, now duplicated task, such as to
-    /// avoid memory leaks in persistent implementations of the queue.
+    /// 默认情况下, NACKing [`TaskQueueDelivery`] 只是将它重新插入到队列的后面 没有任何延迟。
+    /// 此外，它 `ack`是原始的，现在重复的任务，例如 避免队列的持久实现中的内存泄漏。
     async fn nack(&self, delivery: &TaskQueueDelivery) -> Result<()> {
         tracing::debug!("nack {}", delivery.id);
         self.send(delivery.task.clone(), None).await?;
